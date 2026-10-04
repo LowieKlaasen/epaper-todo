@@ -33,12 +33,13 @@ app.get('/display.jpg', async (req, res) => {
         const day = now.getDay(); // 0 is Sunday, 6 is Saturday
 
         // 1. Determine Mode
-        const isWeekend = (day === 0 || day === 6);
-        const isAfterWork = (hour >= 17 || hour < 8);
+        // const isWeekend = (day === 0 || day === 6);
+        const isAfterWork = (hour >= 20 || hour < 8);
         
         let finalBuffer;
 
-        if (isWeekend || isAfterWork) {
+        // if (isWeekend || isAfterWork) {
+        if (isAfterWork) {
             console.log("Mode: ART");
             finalBuffer = await generateArtBuffer();
         } else {
@@ -46,7 +47,15 @@ app.get('/display.jpg', async (req, res) => {
             finalBuffer = await generateTodoBuffer(battery);
         }
 
-        // 2. Send the image
+        // 2. Device instructions (sent as headers alongside the image)
+        const sleepSeconds = calculateSleepSeconds(now);
+        const batteryOn = battery !== null && battery < 20 && isDaytime(now);
+        console.log(`Sleep: ${sleepSeconds}s, battery_on: ${batteryOn}`);
+
+        res.set('X-Sleep-Seconds', String(sleepSeconds));
+        res.set('X-Battery-On', batteryOn ? '1' : '0');
+
+        // 3. Send the image
         res.type('image/jpeg').send(finalBuffer);
         
     } catch (err) {
@@ -54,6 +63,35 @@ app.get('/display.jpg', async (req, res) => {
         res.status(500).send("Error rendering display");
     }
 });
+
+const DAY_START_MIN = 8 * 60;       // 08:00
+const DAY_END_MIN   = 21 * 60;      // 21:00
+const WAKE_MIN      = 8 * 60 + 15;  // 08:15
+const DEFAULT_SLEEP_MS = 2 * 60 * 60 * 1000;
+
+function minutesOfDay(date) {
+    return date.getHours() * 60 + date.getMinutes();
+}
+
+function isDaytime(date) {
+    const mins = minutesOfDay(date);
+    return mins >= DAY_START_MIN && mins < DAY_END_MIN;
+}
+
+// Sleep 2 hours if the next request falls between 08:00 and 21:00,
+// otherwise sleep until the next 08:15.
+function calculateSleepSeconds(now) {
+    const next = new Date(now.getTime() + DEFAULT_SLEEP_MS);
+    const nextMins = minutesOfDay(next);
+    if (nextMins >= DAY_START_MIN && nextMins <= DAY_END_MIN) {
+        return DEFAULT_SLEEP_MS / 1000;
+    }
+
+    const wake = new Date(now);
+    wake.setHours(Math.floor(WAKE_MIN / 60), WAKE_MIN % 60, 0, 0);
+    if (wake <= now) wake.setDate(wake.getDate() + 1);
+    return Math.round((wake - now) / 1000);
+}
 
 // Helper: Process Art
 async function generateArtBuffer() {

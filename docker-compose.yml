@@ -1,0 +1,11 @@
+services:
+  backend:
+    build: .
+    container_name: eInk-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./assets:/app/assets:ro
+    ports:
+      - 3000:3000
